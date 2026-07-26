@@ -69,13 +69,13 @@ case "${1:-}" in
     # Continue the most recent conversation. codex uses a subcommand (not a flag)
     # for this, so translate: ic -c -> codex resume --last.
     sess="ic-$(date +%H%M%S)-$$"
-    exec ssh "$BOX" -t "tmux -S $SOCK new-session -s $sess \"codex resume --last $YOLO\""
+    exec ssh -t "$BOX" "tmux -S $SOCK new-session -s $sess \"codex resume --last $YOLO\""
     ;;
 
   -r|--resume)
     # Interactive resume picker: ic -r -> codex resume.
     sess="ic-$(date +%H%M%S)-$$"
-    exec ssh "$BOX" -t "tmux -S $SOCK new-session -s $sess \"codex resume $YOLO\""
+    exec ssh -t "$BOX" "tmux -S $SOCK new-session -s $sess \"codex resume $YOLO\""
     ;;
 
   ls)
@@ -119,14 +119,14 @@ RSCRIPT
       echo "Usage: ic attach <id>   (see 'ic ls' for live sessions)"; exit 1
     fi
     sess="$(norm "$id")"
-    exec ssh "$BOX" -t "tmux -S $SOCK attach -t $sess"
+    exec ssh -t "$BOX" "tmux -S $SOCK attach -t $sess"
     ;;
 
   sh|shell)
     # A plain shell in a fresh GUI-session tmux session (no codex) - persists and
     # has GUI access (screencapture etc. work), unlike a plain `ssh` shell.
     sess="ic-sh-$(date +%H%M%S)-$$"
-    exec ssh "$BOX" -t "tmux -S $SOCK new-session -s $sess zsh"
+    exec ssh -t "$BOX" "tmux -S $SOCK new-session -s $sess zsh"
     ;;
 
   vnc)
@@ -237,6 +237,6 @@ RSCRIPT
     # --dangerously-bypass-approvals-and-sandbox: the box is a throwaway sandbox,
     # so auto-approve everything (no approval prompts, no inner sandbox).
     sess="ic-$(date +%H%M%S)-$$"
-    exec ssh "$BOX" -t "tmux -S $SOCK new-session -s $sess \"codex $YOLO $*\""
+    exec ssh -t "$BOX" "tmux -S $SOCK new-session -s $sess \"codex $YOLO $*\""
     ;;
 esac

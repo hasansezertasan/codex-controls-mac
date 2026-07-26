@@ -17,8 +17,9 @@ interactive mode you can toggle any combination.
    commits or PRs, use Conventional Commits, keep messages concise. This is the
    Codex analog of Claude's "attribution off" `settings.json` keys (Codex does
    not add attribution on its own, so this is guidance rather than a toggle).
-5. **GitHub CLI (gh)** - installs the `gh` binary into `~/.local/bin` (and the
-   Command Line Tools for git). Authenticate separately with `gh auth login`.
+5. **GitHub CLI (gh)** - installs `gh` via Homebrew if available, otherwise
+   downloads the binary into `~/.local/bin` (plus the Command Line Tools for
+   git). No `jq` prerequisite. Authenticate separately with `gh auth login`.
 6. **Codex for Chrome guidance** - appends a marker-delimited block to
    `~/.codex/AGENTS.md` so browser use is efficient: prefer the accessibility/DOM
    tree over screenshots, interact by stable element reference instead of

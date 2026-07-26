@@ -178,12 +178,20 @@ EOF
 # --- 5. GitHub CLI ----------------------------------------------------------
 setup_gh() {
   log "GitHub CLI (gh)"
+  if command -v gh >/dev/null; then log "gh already installed"; return 0; fi
+  # Homebrew is the simplest, most robust path (this guide already uses brew for
+  # codex/tmux). Fall back to a direct download if brew isn't present.
+  if command -v brew >/dev/null; then
+    brew install gh && { log "gh installed - run 'gh auth login' to authenticate"; return 0; }
+    warn "brew install gh failed; falling back to direct download"
+  fi
   ensure_clt   # gh repo clone / pr checkout shell out to git
-  command -v jq >/dev/null || { warn "jq required to resolve the gh version; skipping gh"; return 0; }
   local arch ver tmp
   arch=amd64; [ "$(uname -m)" = "arm64" ] && arch=arm64
-  ver=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
-        | jq -r '.tag_name | ltrimstr("v")')
+  # Resolve the latest tag from the releases/latest redirect - no jq needed
+  # (jq is not preinstalled on a fresh macOS account).
+  ver=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cli/cli/releases/latest \
+        | sed -n 's#.*/tag/v##p')
   [ -n "$ver" ] || { warn "could not resolve latest gh version"; return 0; }
   tmp=$(mktemp -d)
   curl -fsSL "https://github.com/cli/cli/releases/download/v${ver}/gh_${ver}_macOS_${arch}.zip" -o "$tmp/gh.zip"
@@ -221,6 +229,7 @@ setup_playwright() {
     arch="x64"; [ "$(uname -m)" = "arm64" ] && arch="arm64"
     tarball="node-${nv}-darwin-${arch}.tar.gz"
     log "Installing Node ${nv} (${arch}) into ~/.local"
+    mkdir -p "$HOME/.local"   # not guaranteed to exist on a fresh account
     curl -fsSL "https://nodejs.org/dist/${nv}/${tarball}" | tar -xz -C "$HOME/.local" --strip-components=1
   fi
   command -v npx >/dev/null || { warn "npx still not on PATH; Playwright aborted"; return 0; }
