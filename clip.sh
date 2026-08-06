@@ -41,8 +41,7 @@ case "${1:-}" in
       osascript -e "set h to (open for access (POSIX file \"$f\") with write permission)" \
                 -e 'write (the clipboard as «class PNGf») to h' \
                 -e 'close access h' >/dev/null 2>&1
-      scp -q "$f" "$BOX:/tmp/.clip.png" \
-        && ssh "$BOX" 'osascript -e "set the clipboard to (read (POSIX file \"/tmp/.clip.png\") as «class PNGf»)"'
+      ssh "$BOX" 'set -e; f=$(mktemp /tmp/clip.XXXXXX.png); trap "rm -f -- \"$f\"" EXIT; cat > "$f"; osascript -e "set the clipboard to (read (POSIX file \"$f\") as «class PNGf»)"' < "$f"
       rm -f "$f"
       echo "image -> box clipboard (press Ctrl-V in your ic session to attach it to codex)"
     else
@@ -54,9 +53,8 @@ case "${1:-}" in
   get)
     info=$(ssh "$BOX" 'osascript -e "clipboard info"' 2>/dev/null || true)
     if is_image "$info"; then
-      ssh "$BOX" 'osascript -e "set h to (open for access (POSIX file \"/tmp/.clip.png\") with write permission)" -e "write (the clipboard as «class PNGf») to h" -e "close access h"' >/dev/null 2>&1
       f=$(mktemp)
-      scp -q "$BOX:/tmp/.clip.png" "$f"
+      ssh "$BOX" 'set -e; f=$(mktemp /tmp/clip.XXXXXX.png); trap "rm -f -- \"$f\"" EXIT; osascript -e "set h to (open for access (POSIX file \"$f\") with write permission)" -e "write (the clipboard as «class PNGf») to h" -e "close access h"; cat "$f"' > "$f"
       osascript -e "set the clipboard to (read (POSIX file \"$f\") as «class PNGf»)"
       rm -f "$f"
       echo "image <- box clipboard (now on this Mac; Cmd-V to paste)"

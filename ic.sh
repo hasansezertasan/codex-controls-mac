@@ -60,6 +60,19 @@ EOF
 # Normalize a session id: accept "ic-1234", "1234", and map to full name.
 norm() { case "$1" in ic-*) printf '%s' "$1";; *) printf 'ic-%s' "$1";; esac; }
 
+# Start Codex in a new GUI-session tmux window. Quote every argument separately:
+# ssh gives the remote shell one command string, and tmux gives its shell one
+# command string. This preserves spaces and shell characters in flags and prompts.
+run_codex_session() {
+  local sess="$1"
+  shift
+  local codex_command tmux_command remote_command
+  printf -v codex_command '%q ' codex "$YOLO" "$@"
+  printf -v tmux_command '%q ' tmux -S "$SOCK" new-session -s "$sess" "$codex_command"
+  printf -v remote_command '%q %q %q' bash -lc "$tmux_command"
+  exec ssh -t "$BOX" "$remote_command"
+}
+
 case "${1:-}" in
   -h|--help|help)
     usage
@@ -69,13 +82,13 @@ case "${1:-}" in
     # Continue the most recent conversation. codex uses a subcommand (not a flag)
     # for this, so translate: ic -c -> codex resume --last.
     sess="ic-$(date +%H%M%S)-$$"
-    exec ssh -t "$BOX" "tmux -S $SOCK new-session -s $sess \"codex resume --last $YOLO\""
+    run_codex_session "$sess" resume --last
     ;;
 
   -r|--resume)
     # Interactive resume picker: ic -r -> codex resume.
     sess="ic-$(date +%H%M%S)-$$"
-    exec ssh -t "$BOX" "tmux -S $SOCK new-session -s $sess \"codex resume $YOLO\""
+    run_codex_session "$sess" resume
     ;;
 
   ls)
@@ -232,16 +245,10 @@ RSCRIPT
 
   *)
     # New session: create `codex <args>` in a fresh GUI-session tmux session and
-    # attach in one step. Quote every argument separately: ssh gives the remote
-    # shell one command string, and tmux in turn gives its shell one command
-    # string. Quoting at both boundaries preserves spaces and shell characters
-    # in Codex flags and prompts.
+    # attach in one step.
     # --dangerously-bypass-approvals-and-sandbox: the box is a throwaway sandbox,
     # so auto-approve everything (no approval prompts, no inner sandbox).
     sess="ic-$(date +%H%M%S)-$$"
-    printf -v codex_command '%q ' codex "$YOLO" "$@"
-    printf -v tmux_command '%q ' tmux -S "$SOCK" new-session -s "$sess" "$codex_command"
-    printf -v remote_command '%q %q %q' bash -lc "$tmux_command"
-    exec ssh -t "$BOX" "$remote_command"
+    run_codex_session "$sess" "$@"
     ;;
 esac

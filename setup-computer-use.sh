@@ -58,7 +58,8 @@ GUI_UID=$(id -u)
 # Prefer Homebrew tmux; fall back to anything on PATH. macOS does not ship tmux.
 TMUX_BIN=$(command -v /opt/homebrew/bin/tmux 2>/dev/null \
   || command -v /usr/local/bin/tmux 2>/dev/null \
-  || command -v tmux)
+  || command -v tmux \
+  || true)
 TMUX_DIR=$(dirname "$TMUX_BIN")
 
 uninstall() {
@@ -86,9 +87,10 @@ for d in "$HOME/.local/bin" "$CODEX_DIR" "$TMUX_DIR"; do
   case "$d" in
     /usr/bin|/bin|/usr/sbin|/sbin) continue ;;  # already on the default PATH
   esac
-  if ! grep -q "$d" "$HOME/.zshenv" 2>/dev/null; then
+  path_export="export PATH=\"$d:\$PATH\""
+  if ! grep -qFx "$path_export" "$HOME/.zshenv" 2>/dev/null; then
     log "Adding $d to ~/.zshenv (so 'ic' finds codex/tmux in a fresh session)"
-    echo "export PATH=\"$d:\$PATH\"" >> "$HOME/.zshenv"
+    echo "$path_export" >> "$HOME/.zshenv"
   fi
 done
 if ! grep -q '^export LANG=' "$HOME/.zshenv" 2>/dev/null; then
