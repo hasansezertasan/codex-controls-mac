@@ -111,7 +111,12 @@ ensure_clt() {
   log "Installing Xcode Command Line Tools (git is a non-functional stub without them)"
   sudo touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
   local label
-  label=$(softwareupdate -l 2>/dev/null | sed -n 's/.*Label: \(Command Line Tools.*\)/\1/p' | sort -V | tail -1)
+  # BSD sort on macOS has no GNU sort's -V flag. Prefix each label with its
+  # numeric Xcode version, then sort the individual version components.
+  label=$(softwareupdate -l 2>/dev/null | sed -n 's/.*Label: \(Command Line Tools.*\)/\1/p' \
+    | sed -E 's/.*[^0-9]([0-9]+(\.[0-9]+)*)$/\1\t&/' \
+    | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n \
+    | tail -1 | cut -f2-)
   if [ -n "$label" ]; then
     sudo softwareupdate -i "$label" --verbose || warn "CLT install failed; run 'xcode-select --install' manually"
   else
@@ -144,11 +149,17 @@ apply_config() {
   local block=""
   [ "${SEL[1]}" = 1 ] && block+="model = \"$MODEL\"\n"
   [ "${SEL[2]}" = 1 ] && block+="model_reasoning_effort = \"high\"\n"
-  [ -z "$block" ] && return
-  log "config.toml (managed keys) -> $CONFIG"
   touch "$CONFIG"
   local rest
   rest=$(awk '/# >>> codex-env >>>/{s=1} /# <<< codex-env <<</{s=0;next} !s' "$CONFIG")
+  if [ -z "$block" ]; then
+    if grep -qF "# >>> codex-env >>>" "$CONFIG"; then
+      log "Removing managed config.toml keys from $CONFIG"
+      printf '%s\n' "$rest" > "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
+    fi
+    return
+  fi
+  log "config.toml (managed keys) -> $CONFIG"
   {
     echo "# >>> codex-env >>>"
     printf "%b" "$block"

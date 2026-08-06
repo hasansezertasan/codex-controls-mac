@@ -232,11 +232,16 @@ RSCRIPT
 
   *)
     # New session: create `codex <args>` in a fresh GUI-session tmux session and
-    # attach in one step. Only simple flags are forwarded (no prompt forwarding),
-    # so this stays quote-safe.
+    # attach in one step. Quote every argument separately: ssh gives the remote
+    # shell one command string, and tmux in turn gives its shell one command
+    # string. Quoting at both boundaries preserves spaces and shell characters
+    # in Codex flags and prompts.
     # --dangerously-bypass-approvals-and-sandbox: the box is a throwaway sandbox,
     # so auto-approve everything (no approval prompts, no inner sandbox).
     sess="ic-$(date +%H%M%S)-$$"
-    exec ssh -t "$BOX" "tmux -S $SOCK new-session -s $sess \"codex $YOLO $*\""
+    printf -v codex_command '%q ' codex "$YOLO" "$@"
+    printf -v tmux_command '%q ' tmux -S "$SOCK" new-session -s "$sess" "$codex_command"
+    printf -v remote_command '%q %q %q' bash -lc "$tmux_command"
+    exec ssh -t "$BOX" "$remote_command"
     ;;
 esac
