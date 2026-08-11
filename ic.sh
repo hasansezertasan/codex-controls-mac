@@ -100,7 +100,7 @@ case "${1:-}" in
     # Each live ic-* tmux session: attach state, age, and what's running (codex /
     # a plain shell). Codex has no per-pid session map (unlike Claude Code), so
     # this reports process state only - use `ic history` to browse conversations.
-    ssh "$BOX" "SOCK='$SOCK' bash -s" <<'RSCRIPT'
+    ssh "$BOX" "SOCK=$(printf '%q' "$SOCK") bash -s" <<'RSCRIPT'
 SOCK="${SOCK:-/tmp/cc-tmux.sock}"
 sessions=$(tmux -S "$SOCK" list-sessions -F '#{session_name}|#{session_attached}|#{session_created}' 2>/dev/null | grep '^ic-' | sort -t'|' -k3,3nr)
 [ -z "$sessions" ] && { echo "No live ic sessions."; exit 0; }
@@ -209,7 +209,11 @@ RSCRIPT
     ;;
 
   kill-all)
-    ssh "$BOX" "tmux -S $SOCK list-sessions -F '#{session_name}' 2>/dev/null | grep '^ic-' | xargs -I{} tmux -S $SOCK kill-session -t {} 2>/dev/null || true"
+    ssh "$BOX" "SOCK=$(printf '%q' "$SOCK") bash -s" <<'RSCRIPT'
+SOCK="${SOCK:-/tmp/cc-tmux.sock}"
+tmux -S "$SOCK" list-sessions -F '#{session_name}' 2>/dev/null | grep '^ic-' \
+  | xargs -I{} tmux -S "$SOCK" kill-session -t {} 2>/dev/null || true
+RSCRIPT
     echo "Killed all ic sessions."
     ;;
 
@@ -220,7 +224,7 @@ RSCRIPT
     fi
     keep=""
     for k in "$@"; do keep="$keep $(norm "$k")"; done
-    ssh "$BOX" "SOCK='$SOCK' KEEP='$keep' bash -s" <<'RSCRIPT'
+    ssh "$BOX" "SOCK=$(printf '%q' "$SOCK") KEEP=$(printf '%q' "$keep") bash -s" <<'RSCRIPT'
 SOCK="${SOCK:-/tmp/cc-tmux.sock}"
 live=$(tmux -S "$SOCK" list-sessions -F '#{session_name}' 2>/dev/null | grep '^ic-')
 # refuse to run on a typo: every keep id must match a live session
@@ -245,8 +249,13 @@ RSCRIPT
       all|except) echo "ic: did you mean 'ic kill-$id'?" >&2; exit 1;;
     esac
     sess="$(norm "$id")"
-    ssh "$BOX" "$(rquote tmux -S "$SOCK" kill-session -t "$sess") 2>/dev/null || true"
-    echo "Killed $sess."
+    # Let a real failure (missing session, unreachable socket) surface rather
+    # than always claiming success; keep the redirection outside the remote cmd.
+    if ssh "$BOX" "$(rquote tmux -S "$SOCK" kill-session -t "$sess")" 2>/dev/null; then
+      echo "Killed $sess."
+    else
+      echo "ic: could not kill $sess (no such session? see 'ic ls')" >&2; exit 1
+    fi
     ;;
 
   *)

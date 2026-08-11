@@ -128,6 +128,18 @@ ensure_clt() {
   sudo rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
 }
 
+# --- persist ~/.local/bin on PATH for later shells -------------------------
+# The no-Homebrew fallbacks install gh/jq/yt-dlp into ~/.local/bin. 'gh auth
+# login' (README step 10) runs in a fresh SSH shell before setup-computer-use.sh
+# adds this dir to ~/.zshenv, so persist it here idempotently or those tools
+# won't resolve. (~/.zshenv is read by every zsh, login or not.)
+persist_local_bin() {
+  local line='export PATH="$HOME/.local/bin:$PATH"'
+  grep -qFx "$line" "$HOME/.zshenv" 2>/dev/null && return 0
+  log "Adding ~/.local/bin to ~/.zshenv (so fallback-installed tools resolve)"
+  printf '%s\n' "$line" >> "$HOME/.zshenv"
+}
+
 # --- jq (hard dependency: 'ic history' / 'ic ls' parse rollout JSONL with it) --
 # macOS does not preinstall jq, so provision it. Homebrew first (matches the rest
 # of the guide); otherwise drop the official static macOS binary into ~/.local/bin.
@@ -168,7 +180,11 @@ EOF
 #          [table] section - a TOML requirement). Re-runs replace the block. ---
 apply_config() {
   local block=""
-  [ "${SEL[1]}" = 1 ] && block+="model = \"$MODEL\"\n"
+  # Escape backslashes then quotes so a custom CODEX_MODEL can't produce invalid
+  # TOML (backslash first, or it would double-escape the quotes it inserts).
+  local model_esc=${MODEL//\\/\\\\}
+  model_esc=${model_esc//\"/\\\"}
+  [ "${SEL[1]}" = 1 ] && block+="model = \"$model_esc\"\n"
   [ "${SEL[2]}" = 1 ] && block+="model_reasoning_effort = \"high\"\n"
   touch "$CONFIG"
   local rest
@@ -290,6 +306,7 @@ EOF
 }
 
 # --- run the selected items -------------------------------------------------
+persist_local_bin                                # ~/.local/bin on PATH for later shells
 ensure_jq                                        # hard dependency for ic history/ls
 [ "${SEL[0]}" = 1 ] && setup_aliases
 apply_config                                     # items 2-3, internally gated

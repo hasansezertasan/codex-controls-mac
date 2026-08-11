@@ -66,7 +66,9 @@ uninstall() {
   log "Removing LaunchAgent and tmux server (socket '$SOCK')"
   launchctl bootout "gui/$GUI_UID/$LABEL" 2>/dev/null || true
   rm -f "$PLIST"
-  "$TMUX_BIN" -S "$SOCK" kill-server 2>/dev/null || true
+  # tmux may be absent here (uninstall runs before the presence check); guard so
+  # an empty $TMUX_BIN doesn't try to run "-S" as a command.
+  [ -x "$TMUX_BIN" ] && "$TMUX_BIN" -S "$SOCK" kill-server 2>/dev/null || true
   log "Done. (The computer-use MCP stays registered in $CONFIG; remove the"
   log " [mcp_servers.computer-use] block there if you want it gone.)"
 }
