@@ -60,6 +60,11 @@ EOF
 # Normalize a session id: accept "ic-1234", "1234", and map to full name.
 norm() { case "$1" in ic-*) printf '%s' "$1";; *) printf 'ic-%s' "$1";; esac; }
 
+# Shell-quote a command into one string for ssh to hand to the box's login shell.
+# Keeps a user-supplied session id from breaking out of the remote command (the
+# box reads ~/.zshenv for every zsh, so bare `tmux` still resolves on PATH).
+rquote() { printf '%q ' "$@"; }
+
 # Start Codex in a new GUI-session tmux window. Quote every argument separately:
 # ssh gives the remote shell one command string, and tmux gives its shell one
 # command string. This preserves spaces and shell characters in flags and prompts.
@@ -132,14 +137,14 @@ RSCRIPT
       echo "Usage: ic attach <id>   (see 'ic ls' for live sessions)"; exit 1
     fi
     sess="$(norm "$id")"
-    exec ssh -t "$BOX" "tmux -S $SOCK attach -t $sess"
+    exec ssh -t "$BOX" "$(rquote tmux -S "$SOCK" attach -t "$sess")"
     ;;
 
   sh|shell)
     # A plain shell in a fresh GUI-session tmux session (no codex) - persists and
     # has GUI access (screencapture etc. work), unlike a plain `ssh` shell.
     sess="ic-sh-$(date +%H%M%S)-$$"
-    exec ssh -t "$BOX" "tmux -S $SOCK new-session -s $sess zsh"
+    exec ssh -t "$BOX" "$(rquote tmux -S "$SOCK" new-session -s "$sess" zsh)"
     ;;
 
   vnc)
@@ -187,7 +192,8 @@ echo "  recent:"
 printf '%s\n' "$files" | xargs -I{} stat -f '%m {}' {} 2>/dev/null | sort -rn | head -10 | while read -r _ f; do
   when=$(stat -f '%Sm' -t '%b %d %H:%M' "$f" 2>/dev/null)
   msgs=$(wc -l < "$f" | tr -d ' ')
-  # best-effort first user prompt; tolerant of format drift (degrades to blank)
+  # first user prompt via jq (a dependency; installed by setup-codex-env.sh).
+  # Tolerant of rollout format drift: an unmatched shape degrades to blank.
   prev=$(jq -rs 'first(.[] | (.payload? // .) | select((.role? == "user") or (.type? == "user_message"))
           | (.content? // .message? // .text? // "")
           | if type=="array" then (map(.text? // "") | join(" ")) else tostring end)' \
@@ -239,7 +245,7 @@ RSCRIPT
       all|except) echo "ic: did you mean 'ic kill-$id'?" >&2; exit 1;;
     esac
     sess="$(norm "$id")"
-    ssh "$BOX" "tmux -S $SOCK kill-session -t $sess 2>/dev/null || true"
+    ssh "$BOX" "$(rquote tmux -S "$SOCK" kill-session -t "$sess") 2>/dev/null || true"
     echo "Killed $sess."
     ;;
 

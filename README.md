@@ -165,10 +165,11 @@ ssh-keygen -t ed25519
 ```
 
 Install your public key on the target (asks for the target's login password
-once):
+once). macOS doesn't ship `ssh-copy-id`, so append the key over plain `ssh`:
 
 ```bash
-ssh-copy-id <user>@<target-host>.local
+cat ~/.ssh/id_ed25519.pub | ssh <user>@<target-host>.local \
+  "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 ```
 
 Test it - this should print the target username with no password prompt:
@@ -228,6 +229,7 @@ your PATH on the source Mac, and point it at the target with `IC_BOX` ("ic" =
 "isolated codex"):
 
 ```bash
+mkdir -p ~/.local/bin
 curl -fsSL https://raw.githubusercontent.com/hasansezertasan/codex-controls-mac/main/clip.sh -o ~/.local/bin/clip
 chmod +x ~/.local/bin/clip
 export IC_BOX="<user>@<target-host>.local"   # add to ~/.zshrc
@@ -278,6 +280,11 @@ This optional step applies opinionated defaults via
 and reasoning defaults, `AGENTS.md` guidance, the GitHub CLI, and (opt-in)
 Playwright MCP and yt-dlp. Every item is toggleable; see the full list in
 [`codex-env-components.md`](codex-env-components.md).
+
+Whatever you select, it also ensures `jq` on the box (installing it if missing) -
+a hard dependency of the `ic` helper, which parses Codex's rollout JSONL with it
+for `ic history` and `ic ls`. Run this step, or `brew install jq` yourself, so
+those previews work.
 
 **Interactively on the target** - shows a checklist (core pre-checked, opt-ins
 unchecked):
@@ -361,6 +368,7 @@ This installs the LaunchAgent (persistent `tmux` server with anchor session
 Install [`ic.sh`](ic.sh) (`ic` = "isolated codex") on the source Mac:
 
 ```bash
+mkdir -p ~/.local/bin
 curl -fsSL https://raw.githubusercontent.com/hasansezertasan/codex-controls-mac/main/ic.sh -o ~/.local/bin/ic
 chmod +x ~/.local/bin/ic
 echo 'export IC_BOX="<user>@<target-host>.local"' >> ~/.zshrc   # or edit the default in the script

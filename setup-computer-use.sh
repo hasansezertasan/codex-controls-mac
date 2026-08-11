@@ -56,11 +56,11 @@ CONFIG="$CODEX_HOME/config.toml"
 GUI_UID=$(id -u)
 
 # Prefer Homebrew tmux; fall back to anything on PATH. macOS does not ship tmux.
+# ($TMUX_DIR is derived below, only after the non-empty/executable check.)
 TMUX_BIN=$(command -v /opt/homebrew/bin/tmux 2>/dev/null \
   || command -v /usr/local/bin/tmux 2>/dev/null \
   || command -v tmux \
   || true)
-TMUX_DIR=$(dirname "$TMUX_BIN")
 
 uninstall() {
   log "Removing LaunchAgent and tmux server (socket '$SOCK')"
@@ -76,6 +76,7 @@ uninstall() {
 
 command -v codex >/dev/null || { echo "codex not found on PATH"; exit 1; }
 [ -x "$TMUX_BIN" ] || { echo "tmux not found (brew install tmux)"; exit 1; }
+TMUX_DIR=$(dirname "$TMUX_BIN")   # safe now: $TMUX_BIN is confirmed non-empty
 
 # 0. ~/.zshenv (read by *every* zsh, unlike ~/.zshrc which is interactive-only):
 #    - PATH so `codex` is found when `ic` spawns it in a fresh tmux session.

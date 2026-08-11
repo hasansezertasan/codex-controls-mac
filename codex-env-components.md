@@ -4,6 +4,11 @@ The full list of what [`setup-codex-env.sh`](setup-codex-env.sh) can install.
 Core items (1-6) are on by default; opt-ins (7-8) are off by default. In
 interactive mode you can toggle any combination.
 
+Regardless of selection, the script also ensures **`jq`** (installs it via
+Homebrew, or the official static binary into `~/.local/bin`). It is a hard
+dependency of the `ic` helper: `ic history` and `ic ls` parse Codex's rollout
+JSONL with `jq` to show each conversation's first prompt.
+
 ## Core (on by default)
 
 1. **Shell aliases** - `c` = `codex`, `cs` = `codex
@@ -19,7 +24,8 @@ interactive mode you can toggle any combination.
    not add attribution on its own, so this is guidance rather than a toggle).
 5. **GitHub CLI (gh)** - installs `gh` via Homebrew if available, otherwise
    downloads the binary into `~/.local/bin` (plus the Command Line Tools for
-   git). No `jq` prerequisite. Authenticate separately with `gh auth login`.
+   git); the version is resolved without `jq`. Authenticate separately with
+   `gh auth login`.
 6. **Codex for Chrome guidance** - appends a marker-delimited block to
    `~/.codex/AGENTS.md` so browser use is efficient: prefer the accessibility/DOM
    tree over screenshots, interact by stable element reference instead of

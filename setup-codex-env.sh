@@ -13,6 +13,9 @@
 #   7. Playwright MCP (installs Node + Google Chrome, headed)
 #   8. yt-dlp binary + a Codex prompt
 #
+# Always ensures `jq` (installs it if missing): the `ic` helper parses Codex's
+# rollout JSONL with it for `ic history` / `ic ls`, so it is a hard dependency.
+#
 # Notes on the port from claude-controls-mac: a few Claude-only items have no
 # Codex equivalent and were dropped (custom status line, prompt-suggestion and
 # auto-updater toggles, the --fork-session alias). See codex-env-components.md.
@@ -123,6 +126,24 @@ ensure_clt() {
     warn "No Command Line Tools update found; run 'xcode-select --install' manually"
   fi
   sudo rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+}
+
+# --- jq (hard dependency: 'ic history' / 'ic ls' parse rollout JSONL with it) --
+# macOS does not preinstall jq, so provision it. Homebrew first (matches the rest
+# of the guide); otherwise drop the official static macOS binary into ~/.local/bin.
+ensure_jq() {
+  if command -v jq >/dev/null; then log "jq already installed"; return 0; fi
+  log "jq (required by 'ic history' / 'ic ls' conversation previews)"
+  if command -v brew >/dev/null; then
+    brew install jq && return 0
+    warn "brew install jq failed; falling back to direct download"
+  fi
+  local arch
+  arch=amd64; [ "$(uname -m)" = "arm64" ] && arch=arm64
+  mkdir -p "$HOME/.local/bin"
+  curl -fsSL "https://github.com/jqlang/jq/releases/latest/download/jq-macos-${arch}" -o "$HOME/.local/bin/jq"
+  chmod +x "$HOME/.local/bin/jq"
+  log "jq installed to ~/.local/bin/jq"
 }
 
 # --- 1. Shell aliases -------------------------------------------------------
@@ -246,7 +267,8 @@ setup_playwright() {
   command -v npx >/dev/null || { warn "npx still not on PATH; Playwright aborted"; return 0; }
   npx --yes playwright install chrome || warn "Chrome install failed; install it later with 'npx playwright install chrome'"
   codex mcp remove playwright >/dev/null 2>&1 || true
-  codex mcp add playwright -- npx -y @playwright/mcp@latest --browser chrome || true
+  codex mcp add playwright -- npx -y @playwright/mcp@latest --browser chrome \
+    || warn "codex mcp add playwright failed - add [mcp_servers.playwright] to $CONFIG by hand."
 }
 
 # --- 8. yt-dlp --------------------------------------------------------------
@@ -268,6 +290,7 @@ EOF
 }
 
 # --- run the selected items -------------------------------------------------
+ensure_jq                                        # hard dependency for ic history/ls
 [ "${SEL[0]}" = 1 ] && setup_aliases
 apply_config                                     # items 2-3, internally gated
 [ "${SEL[3]}" = 1 ] && setup_git_hygiene
