@@ -9,6 +9,9 @@ This is a port of [ykdojo/claude-controls-mac](https://github.com/ykdojo/claude-
 to Codex - same idea, mapped onto Codex CLI's own commands, config, and
 features.
 
+In case you're reading this on GitHub Pages, here's [the repo
+version](https://github.com/hasansezertasan/codex-controls-mac).
+
 ## Why do this?
 
 I wanted a separate environment Codex can control on its own, so I can delegate
