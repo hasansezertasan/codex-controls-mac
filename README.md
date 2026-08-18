@@ -603,45 +603,58 @@ On a dedicated box you want CPU, RAM, and disk I/O going to Codex - not to
 Spotlight indexing, Photos analysis, or other consumer features nobody's
 watching. Two things are worth separating here:
 
-- **Gatekeeper / `syspolicyd`** - the one that actually bites agents. Codex
-  spawns processes constantly (`node`, `bash`, `rg`, `git`, test runners), and
-  every `exec()` triggers a Gatekeeper assessment through `syspolicyd`. Under
-  heavy agent activity that becomes a system-wide bottleneck. See
+- **Gatekeeper / `syspolicyd`** - the one that can bite agents. Codex spawns
+  processes constantly (`node`, `bash`, `rg`, `git`, test runners). macOS runs a
+  Gatekeeper assessment through `syspolicyd` on first launch and when a binary
+  changes; results are cached for unchanged, already-seen code. A workload that
+  keeps producing, downloading, or rebuilding executables can therefore make
+  those assessments pile up until `syspolicyd` becomes a bottleneck - but
+  measure before assuming it (below). See
   [#3](https://github.com/hasansezertasan/codex-controls-mac/issues/3).
 - **General bloat** - background services that are pointless on a headless
   agent box.
 
 ### Tame Gatekeeper (`syspolicyd`)
 
-First confirm it's the culprit while Codex is busy - watch for `syspolicyd`
-pinning CPU:
+First confirm it's actually the culprit while Codex is busy by checking
+`syspolicyd` CPU directly (`fs_usage` shows file/exec *activity*, not CPU, and
+can look quiet even while the daemon is busy):
 
 ```bash
 # in another SSH session while an agent task runs
-sudo fs_usage -w -f exec 2>/dev/null | grep syspolicyd   # Ctrl-C to stop
+top -l 0 -stats pid,cpu,command | grep -i syspolicyd     # CPU %  - Ctrl-C to stop
+sudo fs_usage -w -f exec 2>/dev/null | grep -i syspolicy # what it's touching
 ```
 
 Then reduce the assessment load. On a throwaway box with nothing to lose, the
 aggressive options are defensible in a way they wouldn't be on your main Mac:
 
 ```bash
-# Trust tools launched from the terminal (skips repeated Gatekeeper checks)
+# Add the terminal app to Privacy & Security -> Developer Tools, so binaries it
+# launches can run unsigned/unnotarized without a per-launch Gatekeeper prompt
+# (you still approve it there afterwards). NOTE: this attaches to the terminal
+# *app*, so it only helps sessions you start in a local terminal - Codex run
+# over SSH or from the step-11 tmux LaunchAgent is not that app's child.
 sudo spctl developer-mode enable-terminal
 
-# Strip the quarantine flag from a tree the agent churns through
-xattr -dr com.apple.quarantine ~/work
+# Strip the quarantine flag from a specific, reviewed checkout - not a broad
+# tree, and never a directory of untrusted binaries or nested clones.
+xattr -dr com.apple.quarantine <your-repo-dir>
 ```
 
-Grant your terminal / Codex **Full Disk Access** in System Settings -> Privacy &
-Security -> Full Disk Access as well; it cuts some assessment overhead.
+If a tool later fails specifically on a protected path (Desktop, Documents,
+Downloads, removable volumes), grant the terminal **Full Disk Access** in System
+Settings -> Privacy & Security -> Full Disk Access.
 
 > **Nuclear option:** `sudo spctl --master-disable` used to turn Gatekeeper off
-> entirely. On macOS Sequoia (15) and later Apple gutted this - the command only
-> *surfaces* the "Anywhere" option under System Settings -> Privacy & Security ->
-> "Allow applications from", which you must then select and authenticate
-> manually (and it auto-resets after 30 days). It also disables a real security
-> control - only reasonable on an isolated, disposable box. Re-enable with
-> `sudo spctl --master-enable`.
+> entirely (check current state first with `spctl --status`). On macOS Sequoia
+> (15) and later Apple gutted the disable - the command only *surfaces* the
+> "Anywhere" option under System Settings -> Privacy & Security -> "Allow
+> applications from", which you must then select and authenticate manually (and
+> it auto-resets after 30 days). It disables a real security control, so only
+> consider it on a disposable box - and note this box isn't truly isolated: it's
+> reachable over SSH/Tailscale and runs a persistent tmux LaunchAgent (step 11).
+> Re-enable with `sudo spctl --master-enable`.
 
 ### Trim background services
 
@@ -668,9 +681,12 @@ launchctl bootout "gui/$(id -u)/com.apple.photoanalysisd" 2>/dev/null || true
 
 # Reduce animations / transparency (marginal, but free on a headless box).
 # Needs a logout/restart to take effect, and Terminal needs Full Disk Access.
-defaults write com.apple.universalaccess reduceMotion -bool true
-defaults write com.apple.universalaccess reduceTransparency -bool true
+defaults write com.apple.universalaccess reduceMotion -bool true        # restore: -bool false
+defaults write com.apple.universalaccess reduceTransparency -bool true  # restore: -bool false
 ```
+
+`launchctl disable` only blocks *future* launches - it doesn't stop a running
+service, which is why the `bootout` line above kills the live `photoanalysisd`.
 
 The CPU-hungry half of media analysis (Visual Look Up / Live Text) is the
 **system daemon**, not the per-user agent - so disabling it needs the system
@@ -687,7 +703,10 @@ Also worth a look in **System Settings**, but not cleanly scriptable:
 - **iCloud / Apple ID** - keep it signed out (you already did this in
   [step 1](#1-start-fresh-on-the-target-mac)).
 - **Siri & Spotlight suggestions** - off.
-- **General -> Login Items** - remove anything that auto-launches.
+- **General -> Login Items** - remove unrelated auto-launch items, but keep the
+  computer-use LaunchAgent from
+  [step 11](#11-computer-use-over-ssh-optional) (its tmux service / MCP server)
+  if you set that up.
 - **Time Machine** - off unless you're intentionally backing the box up.
 - **General -> Software Update** - keep security updates, but disabling
   auto-download avoids background churn.
@@ -698,12 +717,19 @@ Sleep and display sleep are handled separately in
 ### Hybrid option: containers for headless work
 
 If a task is pure headless compute (builds, tests, research - no GUI), running
-it in a Linux container sidesteps `syspolicyd` entirely, since the workload
-never `exec()`s on the macOS host. [`apple/container`](https://github.com/apple/container)
-runs each Linux container in its own lightweight VM on Apple Silicon and is the
-most native option. Containers **can't** drive Mac GUI apps, though - so keep
-computer-use tasks ([step 11](#11-computer-use-over-ssh-optional)) on the bare
-host, and containerize the rest.
+it in a Linux container keeps that workload's process churn off the macOS host:
+it `exec()`s inside a Linux VM, so it never reaches the host's `syspolicyd`. The
+container tooling itself (CLI, API daemon, VM helpers) still runs natively on
+macOS - it's only the workload that's isolated.
+
+[`apple/container`](https://github.com/apple/container) runs each Linux
+container in its own lightweight VM and is the most native option, with some
+constraints to know: it needs **Apple Silicon**, officially targets **macOS 26
+(Tahoe)** (it runs on macOS 15 but with networking limitations), and you start
+its service with `container system start` before first use. Containers **can't**
+drive Mac GUI apps, so keep computer-use tasks
+([step 11](#11-computer-use-over-ssh-optional)) on the bare host and
+containerize the rest.
 
 ---
 
