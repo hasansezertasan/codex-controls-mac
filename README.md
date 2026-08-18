@@ -597,5 +597,90 @@ phone hotspot) and run `ic ls`.
 
 ---
 
+## 17. Debloat the box for agent use (optional)
+
+On a dedicated box you want CPU, RAM, and disk I/O going to Codex - not to
+Spotlight indexing, Photos analysis, or other consumer features nobody's
+watching. Two things are worth separating here:
+
+- **Gatekeeper / `syspolicyd`** - the one that actually bites agents. Codex
+  spawns processes constantly (`node`, `bash`, `rg`, `git`, test runners), and
+  every `exec()` triggers a Gatekeeper assessment through `syspolicyd`. Under
+  heavy agent activity that becomes a system-wide bottleneck. See
+  [#3](https://github.com/hasansezertasan/codex-controls-mac/issues/3).
+- **General bloat** - background services that are pointless on a headless
+  agent box.
+
+### Tame Gatekeeper (`syspolicyd`)
+
+First confirm it's the culprit while Codex is busy - watch for `syspolicyd`
+pinning CPU:
+
+```bash
+# in another SSH session while an agent task runs
+sudo fs_usage -w -f exec 2>/dev/null | grep syspolicyd   # Ctrl-C to stop
+```
+
+Then reduce the assessment load. On a throwaway box with nothing to lose, the
+aggressive options are defensible in a way they wouldn't be on your main Mac:
+
+```bash
+# Trust tools launched from the terminal (skips repeated Gatekeeper checks)
+sudo spctl developer-mode enable-terminal
+
+# Strip the quarantine flag from a tree the agent churns through
+xattr -dr com.apple.quarantine ~/work
+```
+
+Grant your terminal / Codex **Full Disk Access** in System Settings -> Privacy &
+Security -> Full Disk Access as well; it cuts some assessment overhead.
+
+> **Nuclear option:** `sudo spctl --master-disable` turns Gatekeeper off
+> entirely. It removes the bottleneck completely but also disables a real
+> security control - only reasonable on an isolated, disposable box.
+
+### Trim background services
+
+Every item below is reversible; the "off" command is shown, with the "on"
+command in a comment so you can undo it.
+
+```bash
+# Spotlight indexing - agents use rg/grep, not Spotlight
+sudo mdutil -a -i off                 # on:  sudo mdutil -a -i on
+
+# Photos / media analysis daemons (burn CPU on a fresh library)
+launchctl disable "user/$(id -u)/com.apple.photoanalysisd"   # enable: swap disable->enable
+launchctl disable "user/$(id -u)/com.apple.mediaanalysisd"
+
+# Reduce animations / transparency (marginal, but free on a headless box)
+defaults write com.apple.universalaccess reduceMotion -bool true
+defaults write com.apple.universalaccess reduceTransparency -bool true
+```
+
+Also worth a look in **System Settings**, but not cleanly scriptable:
+
+- **iCloud / Apple ID** - keep it signed out (you already did this in
+  [step 1](#1-start-fresh-on-the-target-mac)).
+- **Siri & Spotlight suggestions** - off.
+- **General -> Login Items** - remove anything that auto-launches.
+- **Time Machine** - off unless you're intentionally backing the box up.
+- **General -> Software Update** - keep security updates, but disabling
+  auto-download avoids background churn.
+
+Sleep and display sleep are handled separately in
+[step 6](#6-keep-the-target-awake).
+
+### Hybrid option: containers for headless work
+
+If a task is pure headless compute (builds, tests, research - no GUI), running
+it in a Linux container sidesteps `syspolicyd` entirely, since the workload
+never `exec()`s on the macOS host. [`apple/container`](https://github.com/apple/container)
+runs each Linux container in its own lightweight VM on Apple Silicon and is the
+most native option. Containers **can't** drive Mac GUI apps, though - so keep
+computer-use tasks ([step 11](#11-computer-use-over-ssh-optional)) on the bare
+host, and containerize the rest.
+
+---
+
 Credit: this guide is a Codex port of
 [ykdojo/claude-controls-mac](https://github.com/ykdojo/claude-controls-mac).
