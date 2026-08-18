@@ -635,26 +635,51 @@ xattr -dr com.apple.quarantine ~/work
 Grant your terminal / Codex **Full Disk Access** in System Settings -> Privacy &
 Security -> Full Disk Access as well; it cuts some assessment overhead.
 
-> **Nuclear option:** `sudo spctl --master-disable` turns Gatekeeper off
-> entirely. It removes the bottleneck completely but also disables a real
-> security control - only reasonable on an isolated, disposable box.
+> **Nuclear option:** `sudo spctl --master-disable` used to turn Gatekeeper off
+> entirely. On macOS Sequoia (15) and later Apple gutted this - the command only
+> *surfaces* the "Anywhere" option under System Settings -> Privacy & Security ->
+> "Allow applications from", which you must then select and authenticate
+> manually (and it auto-resets after 30 days). It also disables a real security
+> control - only reasonable on an isolated, disposable box. Re-enable with
+> `sudo spctl --master-enable`.
 
 ### Trim background services
 
-Every item below is reversible; the "off" command is shown, with the "on"
-command in a comment so you can undo it.
+[`debloat-mac.sh`](debloat-mac.sh) scripts everything in this section - an
+interactive checklist (safe items pre-checked, Gatekeeper/SIP-gated ones opt-in),
+idempotent and reversible with `--undo`:
+
+```bash
+ssh -t <user>@<target-host>.local \
+  'curl -fsSL https://raw.githubusercontent.com/hasansezertasan/codex-controls-mac/main/debloat-mac.sh -o debloat-mac.sh && bash debloat-mac.sh'
+```
+
+Or apply the pieces by hand. Every item below is reversible; the "off" command
+is shown, with the "on" command in a comment so you can undo it.
 
 ```bash
 # Spotlight indexing - agents use rg/grep, not Spotlight
 sudo mdutil -a -i off                 # on:  sudo mdutil -a -i on
 
-# Photos / media analysis daemons (burn CPU on a fresh library)
+# Photos analysis LaunchAgent - persist the override, then stop the running one
+# (disable only blocks future launches; macOS/Photos may re-enable it later)
 launchctl disable "user/$(id -u)/com.apple.photoanalysisd"   # enable: swap disable->enable
-launchctl disable "user/$(id -u)/com.apple.mediaanalysisd"
+launchctl bootout "gui/$(id -u)/com.apple.photoanalysisd" 2>/dev/null || true
 
-# Reduce animations / transparency (marginal, but free on a headless box)
+# Reduce animations / transparency (marginal, but free on a headless box).
+# Needs a logout/restart to take effect, and Terminal needs Full Disk Access.
 defaults write com.apple.universalaccess reduceMotion -bool true
 defaults write com.apple.universalaccess reduceTransparency -bool true
+```
+
+The CPU-hungry half of media analysis (Visual Look Up / Live Text) is the
+**system daemon**, not the per-user agent - so disabling it needs the system
+domain, sudo, and SIP turned off (`csrutil disable` from Recovery). Only worth
+it on a disposable box:
+
+```bash
+sudo launchctl disable system/com.apple.mediaanalysisd   # SIP must be disabled
+# re-enable: sudo launchctl enable system/com.apple.mediaanalysisd
 ```
 
 Also worth a look in **System Settings**, but not cleanly scriptable:
