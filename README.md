@@ -646,6 +646,18 @@ If a tool later fails specifically on a protected path (Desktop, Documents,
 Downloads, removable volumes), grant the terminal **Full Disk Access** in System
 Settings -> Privacy & Security -> Full Disk Access.
 
+The other half of the fix is the workload, not the OS. Assessments are cached
+for code macOS has already seen, so re-running the same `node` or `rg` is cheap
+- what can get expensive is a *newly materialized* binary. Apple doesn't
+document the cache key, but reports point at freshly written executables being
+re-assessed even when the bytes are identical
+([uv#18577](https://github.com/astral-sh/uv/issues/18577)), so the cost tracks
+how many *distinct* binaries you keep creating, not how many processes you run.
+Prefer a shared toolchain cache and long-lived environments over per-task ones
+that re-create the same executables (reuse a venv instead of rebuilding it per
+run), and cap concurrent task fan-out where the agent lets you - fewer
+simultaneous misses, less queueing in `syspolicyd`.
+
 > **Nuclear option:** `sudo spctl --master-disable` used to turn Gatekeeper off
 > entirely (check current state first with `spctl --status`). On macOS Sequoia
 > (15) and later Apple gutted the disable - the command only *surfaces* the
